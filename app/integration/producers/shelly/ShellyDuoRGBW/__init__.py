@@ -1,0 +1,1 @@
+from app.integration.producers.shelly.ShellyDuoRGBW.device import ShellyColorBulb
