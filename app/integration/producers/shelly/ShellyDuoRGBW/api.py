@@ -31,6 +31,7 @@ from app.integration.producers.shelly.ShellyDuoRGBW.device import (
     set_brightness,
     set_brightness_multiple)
 
+router = APIRouter()
 router = APIRouter(tags=["shelly", "duorgbw"])
 logger = logging.getLogger(__name__)
 

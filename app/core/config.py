@@ -15,11 +15,12 @@ class Settings(BaseSettings):
     "http://localhost:3000",
     "http://localhost",
     "http://127.0.0.1",
+    "http://192.168.100.177:3000",
     "http://127.0.0.1:3000",
     "http://example.com"]
     
     # MQTT settings
-    MQTT_BROKER_HOST: str = "192.168.100.173"
+    MQTT_BROKER_HOST: str = "192.168.100.177"
     MQTT_BROKER_PORT: int = 1883
     MQTT_CLIENT_ID: str = "smart-home-client"
     MQTT_KEEPALIVE: int = 60

@@ -10,13 +10,24 @@ from app.api.routes.devices import router as devices_router
 from app.integration.producers.shelly.ShellyDuoRGBW.api import router as shelly_duorgbw_router
 
 # Import services
-from app.services.mqtt_service import init_mqtt_client, mqtt_service, stop_mqtt_client
-from app.services.websocket_service import manager
+from app.services.mqtt_service import init_mqtt_client, stop_mqtt_client, MQTTService
+
 from app.integration.registry import device_registry
 from app.services.command_queue_service import command_queue
-
+from app.services.websocket_service import ConnectionManager
 # Import settings
 from app.core.config import settings
+
+from app.services.device_state_machine import DeviceStateMachine
+
+# Creează instanța state machine
+state_machine = DeviceStateMachine()
+
+# Creează instanța managerului de conexiuni WebSocket
+manager = ConnectionManager(state_machine)
+
+# Creează instanța serviciului MQTT
+mqtt_service = MQTTService(state_machine)
 
 # Configure logging
 logging.basicConfig(
@@ -48,21 +59,24 @@ app.include_router(devices_router, prefix="/devices", tags=["devices"])
 app.include_router(shelly_duorgbw_router, prefix="/shelly/duorgbw", tags=["devices"])
 app.include_router(shelly_duorgbw_router, prefix="/shelly/colorbulb", tags=["devices"])
 
-# WebSocket endpoint
+manager = ConnectionManager()
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time device updates"""
     await manager.connect(websocket)
     try:
-        # Send initial device states
+        # Trimite starea inițială a dispozitivelor
         devices = device_registry.get_all_devices()
+        registry_devices = []
+
         if not devices:
-            # If no devices in registry, try loading from JSON
+            # Dacă nu există dispozitive în registru, încearcă să le încarci din JSON
             from app.core.devices_manager import load_devices
             json_devices = load_devices()
             await websocket.send_json({"type": "initial_devices", "data": json_devices})
         else:
-            # Send devices from registry
-            registry_devices = []
+            # Trimite dispozitivele din registru
             for device in devices:
                 status = device.get_status()
                 registry_devices.append({
@@ -72,15 +86,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     **status
                 })
             await websocket.send_json({"type": "initial_devices", "data": registry_devices})
-        
-        # Keep the connection open and process incoming messages
+
+        # Menține conexiunea deschisă și procesează mesajele primite
         while True:
-            data = await websocket.receive_text()
             try:
-                # Process client messages
+                data = await websocket.receive_text()
                 message = json.loads(data)
+
                 if message.get("type") == "request_status":
-                    # Client is requesting updated status
+                    # Clientul solicită actualizarea statusului dispozitivelor
                     devices = device_registry.get_all_devices()
                     registry_devices = []
                     for device in devices:
@@ -93,13 +107,16 @@ async def websocket_endpoint(websocket: WebSocket):
                         })
                     await websocket.send_json({"type": "devices_status", "data": registry_devices})
             except json.JSONDecodeError:
-                await websocket.send_text(f"Message received but not JSON: {data}")
-            
+                logger.warning(f"Invalid JSON received: {data}")
+                await websocket.send_text(f"Invalid JSON: {data}")
+            except Exception as e:
+                logger.error(f"Error processing WebSocket message: {e}")
+                break
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         logger.info("Client disconnected")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.error(f"Unexpected WebSocket error: {e}")
         manager.disconnect(websocket)
 
 @app.get("/")
